@@ -10,6 +10,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDateTime;
 
 public class UserServiceImpl implements UserService {
     private DataSource dataSource;
@@ -65,30 +66,22 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public boolean deleteAccount(AuthInfo auth, long mid) {
-        String sql1="select Mid from UserRecord where qq="+auth.getQq();
-        String sql2="select Mid from UserRecord where wechat="+auth.getWechat();
-        String sql3="delete from UserRecord where Mid="+mid;
+        String sql1="select Mid from UserRecord where qq="+auth.getQq()+" or wechat="+auth.getWechat();
+        String sql2="delete from UserRecord where Mid="+mid;
 
         if (mid<=0) return false;//检查mid合法
-        if ((auth.getQq()==null||auth.getQq().equals(""))||(auth.getWechat()==null||auth.getWechat().equals("")))return false;
-//检查auth里的qq微信非空
+
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt1 = conn.prepareStatement(sql1);
              PreparedStatement stmt2 = conn.prepareStatement(sql2);
-             PreparedStatement stmt3 = conn.prepareStatement(sql3)
 
         ) {
-            ResultSet rs1 = stmt1.executeQuery();
-            ResultSet rs2=stmt2.executeQuery();
-
-            if (!rs1.next()||!rs2.next())return false;//通过qq或微信找不到这个人
-
-            int mid1=rs1.getInt(1);//通过qq找到的人
-            int mid2=rs2.getInt(1);//通过微信找到的人
-            if (mid1!=mid2)return false;
-            if(auth.getMid()!=mid)return false;
-            if (mid1!=mid) return false;//通过qq微信找到的人相同，但和要删除的人不同
-            stmt3.executeUpdate();
+            if (!auth.isValid(conn)) return false;
+            ResultSet res=stmt1.executeQuery();
+            res.next();
+            long mid1=res.getLong("Mid");
+            if (mid1!=mid)return false;//查到的人和要删除的人不同
+            stmt2.executeUpdate();
             return true;
 
 
@@ -105,32 +98,23 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public boolean follow(AuthInfo auth, long followeeMid) {
-        String sql1="select * from UserRecord where qq="+auth.getQq();
-        String sql2="select * from UserRecord where wechat="+auth.getWechat();
         String sql3="select * from UserRecord where Mid="+followeeMid;
         String sql4="insert into Followings(user_mid,following_mid) values(?,?)";
-        if ((auth.getQq()==null||auth.getQq().equals(""))||(auth.getWechat()==null||auth.getWechat().equals("")))return false;
-//检查auth里的qq微信非空
+        String sql5="select * from Followings where user_mid="+auth.getMid()+" and following_mid="+followeeMid;
         try (Connection conn = dataSource.getConnection();
-             PreparedStatement stmt1 = conn.prepareStatement(sql1);
-             PreparedStatement stmt2 = conn.prepareStatement(sql2);
+
              PreparedStatement stmt3 = conn.prepareStatement(sql3);
              PreparedStatement stmt4 = conn.prepareStatement(sql4);
+             PreparedStatement stmt5= conn.prepareStatement(sql5);
 
         ) {
-            ResultSet rs1 = stmt1.executeQuery();
-            ResultSet rs2=stmt2.executeQuery();
-
-            if (!rs1.next()||!rs2.next())return false;//通过qq或微信找不到这个人
-
-            int mid1=rs1.getInt(1);//通过qq找到的人
-            int mid2=rs2.getInt(1);//通过微信找到的人
-            if (mid1!=mid2)return false;
-            if (mid1!=auth.getMid()) return false;//通过qq微信找到的人相同，但和要auth的人不同
+            if (!auth.isValid(conn))return false;
             if (followeeMid<=0)return false;
             ResultSet rs3=stmt3.executeQuery();
+            ResultSet rs5=stmt5.executeQuery();
 
             if (!rs3.next())return false;//找不到followeemid对应的人
+            if (rs5.next())return true;//已经follow
 
             stmt4.setLong(1,auth.getMid());
             stmt4.setLong(2,followeeMid);
@@ -162,14 +146,14 @@ public class UserServiceImpl implements UserService {
         String sql4="select count(*) from Followings where user_mid="+mid;
         String sql5="select user_mid from Followings where following_mid="+mid;
         String sql6="select count(*) from Followings where following_mid="+mid;
-        String sql7="select count(*) from ViewRecord where user_mid="+mid;
-        String sql8="select BV from ViewRecord where user_mid="+mid;
-        String sql9="select count(*) from Likes where user_mid="+mid;
-        String sql10="select BV from Likes where user_mid="+mid;
-        String sql11="select count(*) from Favorite where user_mid="+mid;
-        String sql12="select BV from Favorite where user_mid="+mid;
-        String sql13="select count(*) from VideoRecord where OwnerMid="+mid;
-        String sql14="select BV from VideoRecord where OwnerMid="+mid;
+        String sql7="select count(*) from view where mid="+mid;
+        String sql8="select bv from view where mid="+mid;
+        String sql9="select count(*) from like_ where mid="+mid;
+        String sql10="select BV from Likes where mid="+mid;
+        String sql11="select count(*) from favorite where mid="+mid;
+        String sql12="select BV from favorite where mid="+mid;
+        String sql13="select count(*) from videos where ownerMid="+mid;
+        String sql14="select bv from videos where ownerMid="+mid;
         if (mid<=0)return null;
 
         try (Connection conn = dataSource.getConnection();
@@ -274,6 +258,7 @@ public class UserServiceImpl implements UserService {
             }
             userInfoResp.setPosted(postBVs);//posted
             return userInfoResp;
+
 
 
 
